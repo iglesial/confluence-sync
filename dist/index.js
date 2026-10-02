@@ -30184,9 +30184,13 @@ var schema_default = {
   description: "Maps repository Markdown files to existing Confluence pages.",
   type: "object",
   additionalProperties: false,
-  required: ["pages"],
+  required: [
+    "pages"
+  ],
   properties: {
-    $schema: { type: "string" },
+    $schema: {
+      type: "string"
+    },
     baseUrl: {
       type: "string",
       pattern: "^https?://",
@@ -30198,11 +30202,31 @@ var schema_default = {
       items: {
         type: "object",
         additionalProperties: false,
-        required: ["file", "pageId"],
+        required: [
+          "file",
+          "pageId"
+        ],
         properties: {
-          file: { type: "string", pattern: "\\.md$", description: "Markdown path relative to the repository root." },
-          pageId: { type: "string", pattern: "^[0-9]+$", description: "Id of an existing Confluence page (the number in its URL)." },
-          title: { type: "string", minLength: 1, description: "Page title to set. When omitted the page keeps its current title." }
+          file: {
+            type: "string",
+            pattern: "\\.md$",
+            description: "Markdown path relative to the repository root."
+          },
+          pageId: {
+            type: "string",
+            pattern: "^[0-9]+$",
+            description: "Id of an existing Confluence page (the number in its URL)."
+          },
+          title: {
+            type: "string",
+            minLength: 1,
+            description: "Page title to set. When omitted the page keeps its current title."
+          },
+          parent: {
+            type: "string",
+            pattern: "(^[0-9]+$)|(\\.md$)",
+            description: "Where the page belongs in the page tree: another mapped Markdown file, or a Confluence page id. The page is moved under it if it is elsewhere."
+          }
         }
       }
     }
@@ -30237,7 +30261,33 @@ function loadConfig(configPath, repoRoot, baseUrlOverride) {
     seenFiles.add(p.file);
     seenIds.add(p.pageId);
   }
+  errors.push(...resolveParents(pages));
   return errors.length ? { errors } : { config: { baseUrl, pages }, errors };
+}
+function resolveParents(pages) {
+  const errors = [];
+  const idByFile = new Map(pages.map((p) => [p.file, p.pageId]));
+  for (const p of pages) {
+    if (!p.parent) continue;
+    if (/^[0-9]+$/.test(p.parent)) p.parentId = p.parent;
+    else {
+      p.parentId = idByFile.get(normalizePath(p.parent));
+      if (!p.parentId) errors.push(`${p.file}: parent ${p.parent} is not a mapped file (map it, or use its page id)`);
+    }
+    if (p.parentId === p.pageId) errors.push(`${p.file}: a page cannot be its own parent`);
+  }
+  const parentOf = new Map(pages.filter((p) => p.parentId).map((p) => [p.pageId, p.parentId]));
+  for (const p of pages) {
+    const seen = /* @__PURE__ */ new Set([p.pageId]);
+    for (let id = parentOf.get(p.pageId); id; id = parentOf.get(id)) {
+      if (seen.has(id)) {
+        if (id === p.pageId && p.parentId !== p.pageId) errors.push(`${p.file}: parent chain loops back to this page`);
+        break;
+      }
+      seen.add(id);
+    }
+  }
+  return errors;
 }
 
 // src/confluence.ts
@@ -30280,8 +30330,11 @@ function createConfluenceClient({ baseUrl, email, token }) {
   }
   return {
     async getPage(id) {
-      const p = await call("GET", `/api/v2/pages/${id}`);
-      return { id: p.id, title: p.title, version: p.version.number };
+      const p = await call(
+        "GET",
+        `/api/v2/pages/${id}`
+      );
+      return { id: p.id, title: p.title, version: p.version.number, spaceId: p.spaceId, parentId: p.parentId ?? void 0 };
     },
     async attachmentNames(id) {
       const names = /* @__PURE__ */ new Set();
@@ -30313,6 +30366,9 @@ function createConfluenceClient({ baseUrl, email, token }) {
       } else {
         await call("POST", `/api/v2/pages/${id}/properties`, { key: PROPERTY_KEY, value });
       }
+    },
+    async movePage(id, parentId) {
+      await call("PUT", `/rest/api/content/${id}/move/append/${parentId}`);
     },
     async updatePage(id, { title, storage, version, message }) {
       await call("PUT", `/api/v2/pages/${id}`, {
@@ -35961,7 +36017,7 @@ async function syncAll(opts) {
     };
     results.push(result);
     try {
-      const live = client ? await client.getPage(page.pageId) : void 0;
+      let live = client ? await client.getPage(page.pageId) : void 0;
       const title = page.title ?? live?.title;
       result.title = title;
       const ctx = { file: page.file, repoRoot: opts.repoRoot, pageIdByFile, baseUrl: config2.baseUrl, repoUrl: opts.repoUrl, sha: opts.sha, title, mermaid: opts.mermaid };
@@ -35985,8 +36041,16 @@ async function syncAll(opts) {
         result.storage = rendered.storage;
         continue;
       }
+      let moveTo;
+      if (page.parentId && live.parentId !== page.parentId) {
+        const parent = await client.getPage(page.parentId);
+        if (parent.spaceId !== live.spaceId) throw new Error(`${page.file}: parent page ${page.parentId} ("${parent.title}") is in another space`);
+        moveTo = parent.id;
+        result.movedUnder = parent.title;
+      }
       const previous = await client.getSyncProperty(page.pageId);
-      if (previous?.hash === hash) {
+      const contentChanged = previous?.hash !== hash;
+      if (!contentChanged && !moveTo) {
         result.status = "unchanged";
         continue;
       }
@@ -35995,7 +36059,18 @@ async function syncAll(opts) {
       result.uploads = [...files.keys()].filter((name) => !existing.has(name));
       if (mode === "check") {
         result.status = "will-update";
-        result.storage = storage;
+        if (contentChanged) result.storage = storage;
+        else result.uploads = [];
+        continue;
+      }
+      if (moveTo) {
+        await client.movePage(page.pageId, moveTo);
+        log(`${page.file}: moved under "${result.movedUnder}"`);
+        live = await client.getPage(page.pageId);
+      }
+      if (!contentChanged) {
+        result.status = "updated";
+        result.uploads = [];
         continue;
       }
       for (const name of result.uploads) {
@@ -36029,7 +36104,11 @@ var ICONS = {
 };
 function resultsTable(results) {
   const rows = results.map((r) => {
-    const detail = r.error ? r.error.replaceAll("\n", "<br>").replaceAll("|", "\\|") : r.uploads?.length ? `attachments: ${r.uploads.join(", ")}` : "";
+    const notes = [
+      ...r.movedUnder ? [`${r.status === "will-update" ? "will move" : "moved"} under "${r.movedUnder}"`] : [],
+      ...r.uploads?.length ? [`attachments: ${r.uploads.join(", ")}`] : []
+    ];
+    const detail = r.error ? r.error.replaceAll("\n", "<br>").replaceAll("|", "\\|") : notes.join("; ");
     return `| \`${r.file}\` | [${r.title ?? r.pageId}](${r.url}) | ${ICONS[r.status]} | ${detail} |`;
   });
   return ["| File | Confluence page | Status | Details |", "|---|---|---|---|", ...rows].join("\n");

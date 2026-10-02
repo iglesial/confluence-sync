@@ -4,6 +4,9 @@ export interface PageInfo {
   id: string
   title: string
   version: number
+  spaceId: string
+  /** As reported by Confluence (may be the space homepage); compared with the mapping's parent. */
+  parentId?: string
 }
 
 export interface SyncProperty {
@@ -22,6 +25,8 @@ export interface ConfluenceClient {
   getSyncProperty(id: string): Promise<SyncProperty | null>
   setSyncProperty(id: string, value: SyncProperty): Promise<void>
   updatePage(id: string, page: { title: string; storage: string; version: number; message: string }): Promise<void>
+  /** Makes `id` the last child of `parentId`. */
+  movePage(id: string, parentId: string): Promise<void>
 }
 
 export class ConfluenceError extends Error {
@@ -74,8 +79,11 @@ export function createConfluenceClient({ baseUrl, email, token }: { baseUrl: str
 
   return {
     async getPage(id) {
-      const p = await call<{ id: string; title: string; version: { number: number } }>('GET', `/api/v2/pages/${id}`)
-      return { id: p.id, title: p.title, version: p.version.number }
+      const p = await call<{ id: string; title: string; version: { number: number }; spaceId: string; parentId?: string | null }>(
+        'GET',
+        `/api/v2/pages/${id}`,
+      )
+      return { id: p.id, title: p.title, version: p.version.number, spaceId: p.spaceId, parentId: p.parentId ?? undefined }
     },
 
     async attachmentNames(id) {
@@ -113,6 +121,11 @@ export function createConfluenceClient({ baseUrl, email, token }: { baseUrl: str
       } else {
         await call('POST', `/api/v2/pages/${id}/properties`, { key: PROPERTY_KEY, value })
       }
+    },
+
+    async movePage(id, parentId) {
+      // v2 has no move endpoint.
+      await call('PUT', `/rest/api/content/${id}/move/append/${parentId}`)
     },
 
     async updatePage(id, { title, storage, version, message }) {

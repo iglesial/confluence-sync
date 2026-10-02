@@ -4,9 +4,13 @@
   "description": "Maps repository Markdown files to existing Confluence pages.",
   "type": "object",
   "additionalProperties": false,
-  "required": ["pages"],
+  "required": [
+    "pages"
+  ],
   "properties": {
-    "$schema": { "type": "string" },
+    "$schema": {
+      "type": "string"
+    },
     "baseUrl": {
       "type": "string",
       "pattern": "^https?://",
@@ -18,11 +22,31 @@
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["file", "pageId"],
+        "required": [
+          "file",
+          "pageId"
+        ],
         "properties": {
-          "file": { "type": "string", "pattern": "\\.md$", "description": "Markdown path relative to the repository root." },
-          "pageId": { "type": "string", "pattern": "^[0-9]+$", "description": "Id of an existing Confluence page (the number in its URL)." },
-          "title": { "type": "string", "minLength": 1, "description": "Page title to set. When omitted the page keeps its current title." }
+          "file": {
+            "type": "string",
+            "pattern": "\\.md$",
+            "description": "Markdown path relative to the repository root."
+          },
+          "pageId": {
+            "type": "string",
+            "pattern": "^[0-9]+$",
+            "description": "Id of an existing Confluence page (the number in its URL)."
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Page title to set. When omitted the page keeps its current title."
+          },
+          "parent": {
+            "type": "string",
+            "pattern": "(^[0-9]+$)|(\\.md$)",
+            "description": "Where the page belongs in the page tree: another mapped Markdown file, or a Confluence page id. The page is moved under it if it is elsewhere."
+          }
         }
       }
     }

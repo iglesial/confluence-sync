@@ -9,7 +9,7 @@ const config = loadConfig('docs/confluence.json', repoRoot).config!
 const fakePng = Buffer.from('png')
 
 /** In-memory Confluence with call recording. */
-function fakeConfluence(pages: Record<string, { title: string; version: number }>) {
+function fakeConfluence(pages: Record<string, { title: string; version: number; spaceId?: string; parentId?: string }>) {
   const calls: string[] = []
   const properties = new Map<string, SyncProperty>()
   const attachments = new Map<string, Set<string>>()
@@ -18,7 +18,7 @@ function fakeConfluence(pages: Record<string, { title: string; version: number }
       calls.push(`get ${id}`)
       const p = pages[id]
       if (!p) throw new ConfluenceError(`GET /api/v2/pages/${id} → 404 (wrong page id, or the token cannot see this page)`, 404)
-      return { id, ...p }
+      return { id, spaceId: 'S1', ...p }
     },
     async attachmentNames(id) {
       return attachments.get(id) ?? new Set()
@@ -32,6 +32,10 @@ function fakeConfluence(pages: Record<string, { title: string; version: number }
     },
     async setSyncProperty(id, value) {
       properties.set(id, value)
+    },
+    async movePage(id, parentId) {
+      calls.push(`move ${id} under ${parentId}`)
+      pages[id].parentId = parentId
     },
     async updatePage(id, page) {
       calls.push(`update ${id} v${page.version} "${page.title}" ${page.message}`)
@@ -117,5 +121,57 @@ describe('syncAll', () => {
     ])
     expect(table).toContain('| `docs/a.md` | [A](https://x/1) | ✅ updated |')
     expect(table).toContain('line1<br>line\\|2')
+  })
+
+  describe('page tree (parent)', () => {
+    const treeConfig = {
+      ...config,
+      pages: [
+        { ...config.pages[1], parentId: undefined }, // docs/other.md → 1002, the parent
+        { ...config.pages[0], parent: 'docs/other.md', parentId: '1002' }, // all-features → under 1002
+      ],
+    }
+
+    it('moves a page under its parent, then leaves it alone', async () => {
+      const { client, calls } = fakeConfluence({ '1001': { title: 'All features', version: 1, parentId: '9' }, '1002': { title: 'Other page', version: 1 } })
+      const first = await syncAll(options({ client, config: treeConfig }))
+      expect(first.map((r) => r.status)).toEqual(['updated', 'updated'])
+      expect(first[1].movedUnder).toBe('Other page')
+      expect(calls).toContain('move 1001 under 1002')
+      // The move happens before the content update, which then uses the re-read version.
+      expect(calls.indexOf('move 1001 under 1002')).toBeLessThan(calls.findIndex((c) => c.startsWith('update 1001')))
+
+      calls.length = 0
+      const second = await syncAll(options({ client, config: treeConfig }))
+      expect(second.map((r) => r.status)).toEqual(['unchanged', 'unchanged'])
+      expect(calls.some((c) => c.startsWith('move'))).toBe(false)
+    })
+
+    it('moves a page whose content did not change', async () => {
+      const { client, calls } = fakeConfluence({ '1001': { title: 'All features', version: 1 }, '1002': { title: 'Other page', version: 1 } })
+      await syncAll(options({ client, config: treeConfig })) // publish content first
+      calls.length = 0
+      ;(await client.getPage('1001')) && client.movePage('1001', '777') // someone moves it away in Confluence
+      calls.length = 0
+      const results = await syncAll(options({ client, config: treeConfig }))
+      expect(results[1]).toMatchObject({ status: 'updated', movedUnder: 'Other page' })
+      expect(calls).toEqual(['get 1002', 'get 1001', 'get 1002', 'move 1001 under 1002', 'get 1001'])
+    })
+
+    it('only reports the move in check mode', async () => {
+      const { client, calls } = fakeConfluence({ '1001': { title: 'All features', version: 1, parentId: '9' }, '1002': { title: 'Other page', version: 1 } })
+      const results = await syncAll(options({ client, config: treeConfig, mode: 'check' }))
+      expect(results[1]).toMatchObject({ status: 'will-update', movedUnder: 'Other page' })
+      expect(calls.some((c) => c.startsWith('move') || c.startsWith('update'))).toBe(false)
+      expect(resultsTable(results)).toContain('will move under "Other page"')
+    })
+
+    it('refuses a parent in another space', async () => {
+      const { client, calls } = fakeConfluence({ '1001': { title: 'All features', version: 1 }, '1002': { title: 'Other page', version: 1, spaceId: 'S2' } })
+      const results = await syncAll(options({ client, config: treeConfig }))
+      expect(results[1].status).toBe('error')
+      expect(results[1].error).toMatch(/is in another space/)
+      expect(calls.some((c) => c.startsWith('move'))).toBe(false)
+    })
   })
 })
