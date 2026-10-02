@@ -63,7 +63,7 @@ jobs:
   sync:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: iglesial/confluence-sync@v1
         with:
           token: ${{ secrets.CONFLUENCE_TOKEN }}
