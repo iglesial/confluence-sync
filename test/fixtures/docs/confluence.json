@@ -1,0 +1,7 @@
+{
+  "baseUrl": "https://example.atlassian.net/wiki",
+  "pages": [
+    { "file": "docs/guide/all-features.md", "pageId": "1001", "title": "All features" },
+    { "file": "docs/other.md", "pageId": "1002" }
+  ]
+}

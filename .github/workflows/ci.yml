@@ -1,0 +1,49 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+      - name: dist/ is up to date
+        run: |
+          if ! git diff --quiet -- dist; then
+            echo "::error::dist/ is stale: run npm run build and commit dist/index.js"
+            git diff --stat -- dist
+            exit 1
+          fi
+
+  # Runs the built action itself, offline (no token), against the test fixtures:
+  # mapping validation, conversion, real Mermaid rendering and the job summary.
+  self-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./
+        id: sync
+        with:
+          working-directory: test/fixtures
+          dry-run: 'true'
+          pr-comment: 'false'
+      - name: Every page passed the offline checks
+        env:
+          RESULTS: ${{ steps.sync.outputs.results }}
+        run: |
+          echo "$RESULTS" | jq .
+          echo "$RESULTS" | jq -e 'length == 2 and all(.status == "checked")'

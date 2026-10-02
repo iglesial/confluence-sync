@@ -1,0 +1,56 @@
+name: Confluence Sync
+description: Publish repository Markdown files to existing Confluence pages. Checks and previews on pull requests; publishes on push.
+author: iglesial
+branding:
+  icon: upload-cloud
+  color: blue
+
+inputs:
+  token:
+    description: Atlassian API token (with `email`, Confluence Cloud) or a bearer personal access token. May be empty only in dry runs / PR checks, which then run offline.
+    required: false
+    default: ''
+  email:
+    description: Email of the Atlassian account that owns the API token (Confluence Cloud basic auth). Leave empty to send the token as a bearer token.
+    required: false
+    default: ''
+  working-directory:
+    description: Directory treated as the repository root (paths in the mapping are relative to it). Useful in monorepos.
+    required: false
+    default: .
+  config:
+    description: Path of the mapping file, relative to working-directory.
+    required: false
+    default: docs/confluence.json
+  base-url:
+    description: Confluence base URL including /wiki (overrides baseUrl in the mapping file).
+    required: false
+    default: ''
+  dry-run:
+    description: Convert and check everything, read the pages, but write nothing. Always on for pull_request events.
+    required: false
+    default: 'false'
+  mermaid:
+    description: '"local" renders ```mermaid blocks to PNG attachments on the runner; "code" leaves them as code blocks.'
+    required: false
+    default: local
+  banner:
+    description: Add an info panel at the top of each page saying it is generated and where to edit it.
+    required: false
+    default: 'true'
+  pr-comment:
+    description: On pull requests, create/update one comment with the preview table.
+    required: false
+    default: 'true'
+  github-token:
+    description: Token used for the PR comment (needs pull-requests write).
+    required: false
+    default: ${{ github.token }}
+
+outputs:
+  results:
+    description: JSON array of { file, pageId, url, status, title, error, uploads } per mapped page.
+
+runs:
+  using: node24
+  main: dist/index.js

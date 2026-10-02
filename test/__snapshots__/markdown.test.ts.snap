@@ -1,0 +1,43 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`renderPage > converts every supported feature (snapshot) 1`] = `
+"<p>Intro with <strong>bold</strong>, <em>italic</em>, <code>inline &lt;code&gt;</code> &amp; an autolink <a href="https://example.com">https://example.com</a>.</p>
+<ac:structured-macro ac:name="info"><ac:rich-text-body><p>Callouts become Confluence panels.</p>
+</ac:rich-text-body></ac:structured-macro>
+<ac:structured-macro ac:name="note"><ac:rich-text-body><p>Careful with <strong>this</strong>.</p>
+</ac:rich-text-body></ac:structured-macro>
+<blockquote><p>A plain quote stays a quote.</p>
+</blockquote>
+<ac:structured-macro ac:name="code"><ac:parameter ac:name="language">typescript</ac:parameter><ac:plain-text-body><![CDATA[const x: Array<number> = [1, 2] // ]]]]><![CDATA[> must survive CDATA]]></ac:plain-text-body></ac:structured-macro>
+<ac:structured-macro ac:name="code"><ac:plain-text-body><![CDATA[indented code block]]></ac:plain-text-body></ac:structured-macro>
+<p><ac:image ac:alt="diagram"><ri:attachment ri:filename="mermaid-c892b1b1.png" /></ac:image></p>
+<table>
+<thead>
+<tr>
+<th>Name</th>
+<th style="text-align:right">Value</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>a</td>
+<td style="text-align:right">1</td>
+</tr>
+</tbody>
+</table>
+<ac:task-list>
+<ac:task><ac:task-id>1</ac:task-id><ac:task-status>incomplete</ac:task-status><ac:task-body>open task</ac:task-body></ac:task>
+<ac:task><ac:task-id>2</ac:task-id><ac:task-status>complete</ac:task-status><ac:task-body>done task</ac:task-body></ac:task>
+</ac:task-list>
+<p>A normal list:</p>
+<ul>
+<li>normal item</li>
+<li>second item</li>
+</ul>
+<p><ac:image ac:alt="Logo"><ri:attachment ri:filename="4637adf6-logo.png" /></ac:image>
+<ac:image ac:alt="Remote"><ri:url ri:value="https://example.com/x.png" /></ac:image></p>
+<p>See <a href="https://example.atlassian.net/wiki/pages/viewpage.action?pageId=1002">the other page</a>, <a href="https://github.com/o/r/blob/HEAD/docs/confluence.json">a repo file</a> and <a href="#all-features">an anchor</a>.</p>
+<p>Raw &lt;script&gt;alert(1)&lt;/script&gt; HTML is escaped.</p>
+<hr />
+"
+`;

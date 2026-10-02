@@ -1,0 +1,26 @@
+{
+  "name": "confluence-sync",
+  "version": "1.0.0",
+  "private": true,
+  "description": "GitHub Action: publish repo Markdown files to Confluence pages, with a check mode for pull requests.",
+  "type": "module",
+  "scripts": {
+    "build": "esbuild src/index.ts --bundle --platform=node --target=node20 --format=esm --banner:js=\"import { createRequire } from 'module'; const require = createRequire(import.meta.url);\" --outfile=dist/index.js",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "@actions/core": "^3.0.1",
+    "ajv": "^8.20.0",
+    "fast-xml-parser": "^5.11.2",
+    "gray-matter": "^4.0.3",
+    "markdown-it": "^15.0.2"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.5",
+    "esbuild": "^0.28.2",
+    "typescript": "^5.9.3",
+    "vitest": "^5.0.3"
+  }
+}
