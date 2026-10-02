@@ -20,7 +20,7 @@ The repository is the source of truth. Each page starts with an info panel sayin
   "baseUrl": "https://your-site.atlassian.net/wiki",
   "pages": [
     { "file": "docs/architecture.md", "pageId": "123456" },
-    { "file": "docs/runbook.md", "pageId": "123457", "title": "Runbook" }
+    { "file": "docs/runbook.md", "pageId": "123457", "title": "Runbook", "parent": "docs/architecture.md" }
   ]
 }
 ```
@@ -28,6 +28,7 @@ The repository is the source of truth. Each page starts with an info panel sayin
 - `file` is relative to the repository root.
 - `title` is optional: without it the page keeps its current title.
 - A leading `# Heading` identical to the page title is dropped, so the title doesn't appear twice.
+- `parent` is optional. It's where the page belongs in the page tree: another **mapped file** or a **page id**. A page found elsewhere is moved under its parent at the next sync, as the parent's last child, and PR checks show *will move under …*. The parent must be in the same space. Unmapped parents, a page that is its own parent, and cycles are mapping errors. Without `parent`, the page stays wherever it is in Confluence.
 
 ### 2. Add the token
 1. Create an API token at **id.atlassian.com → Security → API tokens → Create API token** (the classic kind, without scopes). Use an account that can edit the pages.
@@ -117,7 +118,7 @@ Mermaid rendering downloads `@mermaid-js/mermaid-cli` (headless Chromium) the fi
 
 ## Limitations
 - Confluence Cloud only: it uses the v2 REST API.
-- It updates existing pages; it doesn't create or move pages, or delete pages that were removed from the mapping.
+- It updates existing pages, and moves them when `parent` says so. It doesn't create pages, and it doesn't delete pages that were removed from the mapping.
 - Edits made directly in Confluence are overwritten. The banner tells readers this.
 - Anchor links (`#section`) are kept as-is. Confluence generates its own heading anchors, so they may not resolve.
 

@@ -1,4 +1,6 @@
-import { resolve } from 'node:path'
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join, resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { loadConfig } from '../src/config.ts'
 
@@ -36,5 +38,42 @@ describe('loadConfig', () => {
 
   it('reports a missing mapping file', () => {
     expect(loadConfig('docs/nope.json', good).errors).toEqual(['Mapping file docs/nope.json not found'])
+  })
+
+  describe('parent', () => {
+    const write = (pages: object[]) => {
+      const dir = mkdtempSync(join(tmpdir(), 'cs-parent-'))
+      mkdirSync(join(dir, 'docs'))
+      for (const f of ['a.md', 'b.md', 'c.md']) writeFileSync(join(dir, 'docs', f), '# x')
+      writeFileSync(join(dir, 'docs/confluence.json'), JSON.stringify({ baseUrl: 'https://x/wiki', pages }))
+      return loadConfig('docs/confluence.json', dir)
+    }
+
+    it('resolves a mapped file or a page id to parentId', () => {
+      const { config, errors } = write([
+        { file: 'docs/a.md', pageId: '1' },
+        { file: 'docs/b.md', pageId: '2', parent: './docs/a.md' },
+        { file: 'docs/c.md', pageId: '3', parent: '42' },
+      ])
+      expect(errors).toEqual([])
+      expect(config?.pages.map((p) => p.parentId)).toEqual([undefined, '1', '42'])
+    })
+
+    it('rejects unmapped parents, self-parents and cycles', () => {
+      expect(write([{ file: 'docs/a.md', pageId: '1', parent: 'docs/zzz.md' }]).errors).toEqual([
+        'docs/a.md: parent docs/zzz.md is not a mapped file (map it, or use its page id)',
+      ])
+      expect(write([{ file: 'docs/a.md', pageId: '1', parent: '1' }]).errors).toEqual(['docs/a.md: a page cannot be its own parent'])
+      expect(
+        write([
+          { file: 'docs/a.md', pageId: '1', parent: 'docs/b.md' },
+          { file: 'docs/b.md', pageId: '2', parent: 'docs/a.md' },
+        ]).errors,
+      ).toEqual(['docs/a.md: parent chain loops back to this page', 'docs/b.md: parent chain loops back to this page'])
+    })
+
+    it('rejects a parent that is neither a page id nor a .md file', () => {
+      expect(write([{ file: 'docs/a.md', pageId: '1', parent: 'docs/a.txt' }]).errors.join()).toMatch(/parent: must match pattern/)
+    })
   })
 })

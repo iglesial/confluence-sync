@@ -18,6 +18,8 @@ export interface PageResult {
   /** Storage XHTML (dry-run / check mode), for logs and the job summary. */
   storage?: string
   uploads?: string[]
+  /** Title of the parent the page was (or, in check mode, will be) moved under. */
+  movedUnder?: string
 }
 
 export interface SyncOptions {
@@ -56,7 +58,7 @@ export async function syncAll(opts: SyncOptions): Promise<PageResult[]> {
     }
     results.push(result)
     try {
-      const live = client ? await client.getPage(page.pageId) : undefined
+      let live = client ? await client.getPage(page.pageId) : undefined
       const title = page.title ?? live?.title
       result.title = title
 
@@ -88,8 +90,19 @@ export async function syncAll(opts: SyncOptions): Promise<PageResult[]> {
         result.storage = rendered.storage
         continue
       }
+
+      // Page tree: move the page under its mapped parent when it is elsewhere (same space only).
+      let moveTo: string | undefined
+      if (page.parentId && live.parentId !== page.parentId) {
+        const parent = await client.getPage(page.parentId)
+        if (parent.spaceId !== live.spaceId) throw new Error(`${page.file}: parent page ${page.parentId} ("${parent.title}") is in another space`)
+        moveTo = parent.id
+        result.movedUnder = parent.title
+      }
+
       const previous = await client.getSyncProperty(page.pageId)
-      if (previous?.hash === hash) {
+      const contentChanged = previous?.hash !== hash
+      if (!contentChanged && !moveTo) {
         result.status = 'unchanged'
         continue
       }
@@ -100,7 +113,19 @@ export async function syncAll(opts: SyncOptions): Promise<PageResult[]> {
 
       if (mode === 'check') {
         result.status = 'will-update'
-        result.storage = storage
+        if (contentChanged) result.storage = storage
+        else result.uploads = []
+        continue
+      }
+      if (moveTo) {
+        await client.movePage(page.pageId, moveTo)
+        log(`${page.file}: moved under "${result.movedUnder}"`)
+        // A move can create a page version; re-read it so the content update targets the latest one.
+        live = await client.getPage(page.pageId)
+      }
+      if (!contentChanged) {
+        result.status = 'updated'
+        result.uploads = []
         continue
       }
       for (const name of result.uploads) {
@@ -137,7 +162,11 @@ const ICONS: Record<PageStatus, string> = {
 /** Markdown table for the job summary and the PR comment. */
 export function resultsTable(results: PageResult[]): string {
   const rows = results.map((r) => {
-    const detail = r.error ? r.error.replaceAll('\n', '<br>').replaceAll('|', '\\|') : r.uploads?.length ? `attachments: ${r.uploads.join(', ')}` : ''
+    const notes = [
+      ...(r.movedUnder ? [`${r.status === 'will-update' ? 'will move' : 'moved'} under "${r.movedUnder}"`] : []),
+      ...(r.uploads?.length ? [`attachments: ${r.uploads.join(', ')}`] : []),
+    ]
+    const detail = r.error ? r.error.replaceAll('\n', '<br>').replaceAll('|', '\\|') : notes.join('; ')
     return `| \`${r.file}\` | [${r.title ?? r.pageId}](${r.url}) | ${ICONS[r.status]} | ${detail} |`
   })
   return ['| File | Confluence page | Status | Details |', '|---|---|---|---|', ...rows].join('\n')
