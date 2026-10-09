@@ -1,0 +1,9 @@
+{
+  "baseUrl": "https://example.atlassian.net/wiki",
+  "pages": [
+    { "file": "docs/a.md", "title": "Same title", "parent": "123" },
+    { "file": "docs/b.md", "title": "same TITLE", "parent": "123" },
+    { "file": "docs/c.md", "title": "Loop one", "parent": "docs/d.md" },
+    { "file": "docs/d.md", "title": "Loop two", "parent": "docs/c.md" }
+  ]
+}

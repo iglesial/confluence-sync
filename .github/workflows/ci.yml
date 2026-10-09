@@ -47,3 +47,17 @@ jobs:
         run: |
           echo "$RESULTS" | jq .
           echo "$RESULTS" | jq -e 'length == 2 and all(.status == "checked")'
+      # Entries without pageId (found by title or created on publish) pass the same offline checks.
+      - uses: ./
+        id: create
+        with:
+          working-directory: test/fixtures
+          config: docs/confluence-create.json
+          dry-run: 'true'
+          pr-comment: 'false'
+      - name: Pages to create passed the offline checks
+        env:
+          RESULTS: ${{ steps.create.outputs.results }}
+        run: |
+          echo "$RESULTS" | jq .
+          echo "$RESULTS" | jq -e 'length == 3 and all(.status == "checked")'

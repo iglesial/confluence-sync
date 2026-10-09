@@ -1,0 +1,8 @@
+{
+  "baseUrl": "https://example.atlassian.net/wiki",
+  "pages": [
+    { "file": "docs/other.md", "pageId": "1002" },
+    { "file": "docs/new/child.md", "title": "New child", "parent": "docs/new/section.md" },
+    { "file": "docs/new/section.md", "title": "New section", "parent": "docs/other.md" }
+  ]
+}

@@ -41,8 +41,20 @@ function fakeConfluence(pages: Record<string, { title: string; version: number; 
       calls.push(`update ${id} v${page.version} "${page.title}" ${page.message}`)
       pages[id].version = page.version
     },
+    async findPagesByTitle(spaceId, title) {
+      calls.push(`find "${title}"`)
+      return Object.entries(pages)
+        .filter(([, p]) => (p.spaceId ?? 'S1') === spaceId && p.title === title)
+        .map(([id, p]) => ({ id, spaceId: 'S1', ...p }))
+    },
+    async createPage({ spaceId, parentId, title }) {
+      const id = String(5000 + Object.keys(pages).length)
+      calls.push(`create ${id} "${title}" under ${parentId}`)
+      pages[id] = { title, version: 1, spaceId, parentId }
+      return { id, title, version: 1, spaceId, parentId }
+    },
   }
-  return { client, calls }
+  return { client, calls, pages }
 }
 
 const options = (over: Partial<SyncOptions>): SyncOptions => ({

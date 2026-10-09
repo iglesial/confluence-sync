@@ -1,9 +1,9 @@
 import { existsSync, readFileSync } from 'node:fs'
-import { resolve } from 'node:path'
+import { relative, resolve } from 'node:path'
 import * as core from '@actions/core'
-import { loadConfig } from './config.ts'
+import { loadConfig, normalizePath } from './config.ts'
 import { createConfluenceClient } from './confluence.ts'
-import { upsertPrComment } from './github.ts'
+import { openPinPr, pinPageIds, pinPrBody, upsertPrComment } from './github.ts'
 import { createMermaidRenderer } from './mermaid.ts'
 import { type PageResult, resultsTable, syncAll } from './sync.ts'
 
@@ -26,7 +26,8 @@ async function main() {
   if (!token && !dryRun) throw new Error('The token input is required to publish (it may only be empty in dry-run or pull request checks).')
   if (!token) core.warning('No Confluence token (e.g. a pull request from a fork): running offline checks only.')
 
-  const { config, errors } = loadConfig(core.getInput('config') || 'docs/confluence.json', repoRoot, core.getInput('base-url'))
+  const configPath = core.getInput('config') || 'docs/confluence.json'
+  const { config, errors } = loadConfig(configPath, repoRoot, core.getInput('base-url'))
   let results: PageResult[] = []
   if (config) {
     results = await syncAll({
@@ -44,6 +45,31 @@ async function main() {
     })
   }
 
+  // Pages found or created for entries without pageId: optionally record their ids in a PR.
+  const pins = config
+    ? results.filter((r) => r.pageId && !config.pages.find((p) => p.file === r.file)?.pageId && r.status !== 'error')
+    : []
+  let pinNote: string | undefined
+  if (!dryRun && pins.length && core.getBooleanInput('pin-created-ids')) {
+    try {
+      const raw = readFileSync(resolve(repoRoot, configPath), 'utf8')
+      const workspace = process.env.GITHUB_WORKSPACE ?? process.cwd()
+      const url = await openPinPr({
+        repo,
+        token: core.getInput('github-token'),
+        base: process.env.GITHUB_REF_NAME ?? 'main',
+        path: normalizePath(relative(workspace, resolve(repoRoot, configPath))),
+        content: pinPageIds(raw, pins, normalizePath),
+        body: pinPrBody(pins, configPath),
+      })
+      pinNote = `Page ids recorded in ${url}`
+      core.info(pinNote)
+    } catch (e) {
+      // The pages are synced either way; a later run finds them again by title.
+      core.warning(`Could not open the pull request pinning the page ids: ${(e as Error).message}`)
+    }
+  }
+
   const failed = errors.length || results.some((r) => r.status === 'error')
   const heading = isPr
     ? `### 📄 Confluence preview: ${failed ? '❌ fix the errors below before merging' : 'pages are valid; they will be published on merge'}`
@@ -53,6 +79,7 @@ async function main() {
     ...(errors.length ? [`**Mapping errors:**\n${errors.map((e) => `- ${e}`).join('\n')}`] : []),
     ...(results.length ? [resultsTable(results)] : []),
     ...(token ? [] : ['_Offline check only: no Confluence token was available._']),
+    ...(pinNote ? [pinNote] : []),
   ].join('\n\n')
 
   // Full storage XHTML for dry runs goes to the log and the summary, never the PR comment.

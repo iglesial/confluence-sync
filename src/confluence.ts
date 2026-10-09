@@ -27,6 +27,10 @@ export interface ConfluenceClient {
   updatePage(id: string, page: { title: string; storage: string; version: number; message: string }): Promise<void>
   /** Makes `id` the last child of `parentId`. */
   movePage(id: string, parentId: string): Promise<void>
+  /** Current pages of a space with exactly this title (titles are unique within a space, so 0 or 1 normally). */
+  findPagesByTitle(spaceId: string, title: string): Promise<PageInfo[]>
+  /** Creates a page as the last child of `parentId`. */
+  createPage(page: { spaceId: string; parentId: string; title: string; storage: string }): Promise<PageInfo>
 }
 
 export class ConfluenceError extends Error {
@@ -126,6 +130,23 @@ export function createConfluenceClient({ baseUrl, email, token }: { baseUrl: str
     async movePage(id, parentId) {
       // v2 has no move endpoint.
       await call('PUT', `/rest/api/content/${id}/move/append/${parentId}`)
+    },
+
+    async findPagesByTitle(spaceId, title) {
+      const r = await call<{ results: { id: string; title: string; version: { number: number }; spaceId: string; parentId?: string | null }[] }>(
+        'GET',
+        `/api/v2/pages?space-id=${encodeURIComponent(spaceId)}&title=${encodeURIComponent(title)}&status=current&limit=5`,
+      )
+      return r.results.map((p) => ({ id: p.id, title: p.title, version: p.version.number, spaceId: p.spaceId, parentId: p.parentId ?? undefined }))
+    },
+
+    async createPage({ spaceId, parentId, title, storage }) {
+      const p = await call<{ id: string; title: string; version: { number: number }; spaceId: string; parentId?: string | null }>(
+        'POST',
+        '/api/v2/pages',
+        { spaceId, status: 'current', title, parentId, body: { representation: 'storage', value: storage } },
+      )
+      return { id: p.id, title: p.title, version: p.version.number, spaceId: p.spaceId, parentId: p.parentId ?? undefined }
     },
 
     async updatePage(id, { title, storage, version, message }) {

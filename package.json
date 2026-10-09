@@ -1,6 +1,6 @@
 {
   "name": "confluence-sync",
-  "version": "1.0.0",
+  "version": "1.2.0",
   "private": true,
   "description": "GitHub Action: publish repo Markdown files to Confluence pages, with a check mode for pull requests.",
   "type": "module",
