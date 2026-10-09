@@ -1,7 +1,7 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "title": "confluence-sync mapping",
-  "description": "Maps repository Markdown files to existing Confluence pages.",
+  "description": "Maps repository Markdown files to Confluence pages: existing ones by pageId, or new ones found by title under their parent, or created there.",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -23,8 +23,7 @@
         "type": "object",
         "additionalProperties": false,
         "required": [
-          "file",
-          "pageId"
+          "file"
         ],
         "properties": {
           "file": {
@@ -35,19 +34,33 @@
           "pageId": {
             "type": "string",
             "pattern": "^[0-9]+$",
-            "description": "Id of an existing Confluence page (the number in its URL)."
+            "description": "Id of an existing Confluence page (the number in its URL). Optional: without it the page is found by title in its parent's space, or created under the parent, and `title` and `parent` are required."
           },
           "title": {
             "type": "string",
             "minLength": 1,
-            "description": "Page title to set. When omitted the page keeps its current title."
+            "description": "Page title to set. When omitted the page keeps its current title. Required when pageId is omitted: it's how the page is found, or the title it's created with."
           },
           "parent": {
             "type": "string",
             "pattern": "(^[0-9]+$)|(\\.md$)",
-            "description": "Where the page belongs in the page tree: another mapped Markdown file, or a Confluence page id. The page is moved under it if it is elsewhere."
+            "description": "Where the page belongs in the page tree: another mapped Markdown file, or a Confluence page id. The page is moved under it if it is elsewhere, or created under it when it has no pageId."
           }
-        }
+        },
+        "anyOf": [
+          {
+            "required": [
+              "pageId"
+            ]
+          },
+          {
+            "required": [
+              "title",
+              "parent"
+            ],
+            "description": "Without pageId, the page is found by title under its parent (or created there), so both are required."
+          }
+        ]
       }
     }
   }

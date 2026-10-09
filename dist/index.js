@@ -22909,49 +22909,49 @@ var require_fast_uri = __commonJS({
       schemelessOptions.skipEscape = true;
       return serialize(resolved, schemelessOptions);
     }
-    function resolveComponent(base, relative, options2, skipNormalization) {
+    function resolveComponent(base, relative2, options2, skipNormalization) {
       const target = {};
       if (!skipNormalization) {
         base = parse2(serialize(base, options2), options2);
-        relative = parse2(serialize(relative, options2), options2);
+        relative2 = parse2(serialize(relative2, options2), options2);
       }
       options2 = options2 || {};
-      if (!options2.tolerant && relative.scheme) {
-        target.scheme = relative.scheme;
-        target.userinfo = relative.userinfo;
-        target.host = relative.host;
-        target.port = relative.port;
-        target.path = removeDotSegments(relative.path || "");
-        target.query = relative.query;
+      if (!options2.tolerant && relative2.scheme) {
+        target.scheme = relative2.scheme;
+        target.userinfo = relative2.userinfo;
+        target.host = relative2.host;
+        target.port = relative2.port;
+        target.path = removeDotSegments(relative2.path || "");
+        target.query = relative2.query;
       } else {
-        if (relative.userinfo !== void 0 || relative.host !== void 0 || relative.port !== void 0) {
-          target.userinfo = relative.userinfo;
-          target.host = relative.host;
-          target.port = relative.port;
-          target.path = removeDotSegments(relative.path || "");
-          target.query = relative.query;
+        if (relative2.userinfo !== void 0 || relative2.host !== void 0 || relative2.port !== void 0) {
+          target.userinfo = relative2.userinfo;
+          target.host = relative2.host;
+          target.port = relative2.port;
+          target.path = removeDotSegments(relative2.path || "");
+          target.query = relative2.query;
         } else {
-          if (!relative.path) {
+          if (!relative2.path) {
             target.path = base.path;
-            if (relative.query !== void 0) {
-              target.query = relative.query;
+            if (relative2.query !== void 0) {
+              target.query = relative2.query;
             } else {
               target.query = base.query;
             }
           } else {
-            if (relative.path[0] === "/") {
-              target.path = removeDotSegments(relative.path);
+            if (relative2.path[0] === "/") {
+              target.path = removeDotSegments(relative2.path);
             } else {
               if ((base.userinfo !== void 0 || base.host !== void 0 || base.port !== void 0) && !base.path) {
-                target.path = "/" + relative.path;
+                target.path = "/" + relative2.path;
               } else if (!base.path) {
-                target.path = relative.path;
+                target.path = relative2.path;
               } else {
-                target.path = base.path.slice(0, base.path.lastIndexOf("/") + 1) + relative.path;
+                target.path = base.path.slice(0, base.path.lastIndexOf("/") + 1) + relative2.path;
               }
               target.path = removeDotSegments(target.path);
             }
-            target.query = relative.query;
+            target.query = relative2.query;
           }
           target.userinfo = base.userinfo;
           target.host = base.host;
@@ -22959,7 +22959,7 @@ var require_fast_uri = __commonJS({
         }
         target.scheme = base.scheme;
       }
-      target.fragment = relative.fragment;
+      target.fragment = relative2.fragment;
       return target;
     }
     function equal(uriA, uriB, options2) {
@@ -29654,7 +29654,7 @@ var require_punycode = __commonJS({
 
 // src/index.ts
 import { existsSync as existsSync4, readFileSync as readFileSync5 } from "node:fs";
-import { resolve as resolve4 } from "node:path";
+import { relative, resolve as resolve4 } from "node:path";
 
 // node_modules/@actions/core/lib/command.js
 import * as os from "os";
@@ -30181,7 +30181,7 @@ import { posix, resolve } from "node:path";
 var schema_default = {
   $schema: "http://json-schema.org/draft-07/schema#",
   title: "confluence-sync mapping",
-  description: "Maps repository Markdown files to existing Confluence pages.",
+  description: "Maps repository Markdown files to Confluence pages: existing ones by pageId, or new ones found by title under their parent, or created there.",
   type: "object",
   additionalProperties: false,
   required: [
@@ -30203,8 +30203,7 @@ var schema_default = {
         type: "object",
         additionalProperties: false,
         required: [
-          "file",
-          "pageId"
+          "file"
         ],
         properties: {
           file: {
@@ -30215,19 +30214,33 @@ var schema_default = {
           pageId: {
             type: "string",
             pattern: "^[0-9]+$",
-            description: "Id of an existing Confluence page (the number in its URL)."
+            description: "Id of an existing Confluence page (the number in its URL). Optional: without it the page is found by title in its parent's space, or created under the parent, and `title` and `parent` are required."
           },
           title: {
             type: "string",
             minLength: 1,
-            description: "Page title to set. When omitted the page keeps its current title."
+            description: "Page title to set. When omitted the page keeps its current title. Required when pageId is omitted: it's how the page is found, or the title it's created with."
           },
           parent: {
             type: "string",
             pattern: "(^[0-9]+$)|(\\.md$)",
-            description: "Where the page belongs in the page tree: another mapped Markdown file, or a Confluence page id. The page is moved under it if it is elsewhere."
+            description: "Where the page belongs in the page tree: another mapped Markdown file, or a Confluence page id. The page is moved under it if it is elsewhere, or created under it when it has no pageId."
           }
-        }
+        },
+        anyOf: [
+          {
+            required: [
+              "pageId"
+            ]
+          },
+          {
+            required: [
+              "title",
+              "parent"
+            ],
+            description: "Without pageId, the page is found by title under its parent (or created there), so both are required."
+          }
+        ]
       }
     }
   }
@@ -30254,40 +30267,69 @@ function loadConfig(configPath, repoRoot, baseUrlOverride) {
   const pages = raw.pages.map((p) => ({ ...p, file: normalizePath(p.file) }));
   const seenFiles = /* @__PURE__ */ new Set();
   const seenIds = /* @__PURE__ */ new Set();
+  const newTitles = /* @__PURE__ */ new Set();
   for (const p of pages) {
     if (!existsSync2(resolve(repoRoot, p.file))) errors.push(`${p.file}: file not found`);
     if (seenFiles.has(p.file)) errors.push(`${p.file}: mapped more than once`);
-    if (seenIds.has(p.pageId)) errors.push(`page ${p.pageId}: mapped from more than one file`);
+    if (p.pageId) {
+      if (seenIds.has(p.pageId)) errors.push(`page ${p.pageId}: mapped from more than one file`);
+      seenIds.add(p.pageId);
+    } else {
+      const key = p.title.trim().toLowerCase();
+      if (newTitles.has(key)) errors.push(`${p.file}: another page without pageId has the title "${p.title}"`);
+      newTitles.add(key);
+    }
     seenFiles.add(p.file);
-    seenIds.add(p.pageId);
   }
   errors.push(...resolveParents(pages));
   return errors.length ? { errors } : { config: { baseUrl, pages }, errors };
 }
 function resolveParents(pages) {
   const errors = [];
-  const idByFile = new Map(pages.map((p) => [p.file, p.pageId]));
+  const byFile = new Map(pages.map((p) => [p.file, p]));
+  const fileById = new Map(pages.filter((p) => p.pageId).map((p) => [p.pageId, p.file]));
   for (const p of pages) {
     if (!p.parent) continue;
-    if (/^[0-9]+$/.test(p.parent)) p.parentId = p.parent;
-    else {
-      p.parentId = idByFile.get(normalizePath(p.parent));
-      if (!p.parentId) errors.push(`${p.file}: parent ${p.parent} is not a mapped file (map it, or use its page id)`);
+    if (/^[0-9]+$/.test(p.parent)) {
+      p.parentId = p.parent;
+      p.parentFile = fileById.get(p.parent);
+    } else {
+      const parent = byFile.get(normalizePath(p.parent));
+      if (!parent) {
+        errors.push(`${p.file}: parent ${p.parent} is not a mapped file (map it, or use its page id)`);
+        continue;
+      }
+      p.parentFile = parent.file;
+      p.parentId = parent.pageId;
     }
-    if (p.parentId === p.pageId) errors.push(`${p.file}: a page cannot be its own parent`);
+    if (p.parentFile === p.file || p.pageId && p.parentId === p.pageId) errors.push(`${p.file}: a page cannot be its own parent`);
   }
-  const parentOf = new Map(pages.filter((p) => p.parentId).map((p) => [p.pageId, p.parentId]));
   for (const p of pages) {
-    const seen = /* @__PURE__ */ new Set([p.pageId]);
-    for (let id = parentOf.get(p.pageId); id; id = parentOf.get(id)) {
-      if (seen.has(id)) {
-        if (id === p.pageId && p.parentId !== p.pageId) errors.push(`${p.file}: parent chain loops back to this page`);
+    const seen = /* @__PURE__ */ new Set([p.file]);
+    for (let f = byFile.get(p.file)?.parentFile; f; f = byFile.get(f)?.parentFile) {
+      if (seen.has(f)) {
+        if (f === p.file && p.parentFile !== p.file) errors.push(`${p.file}: parent chain loops back to this page`);
         break;
       }
-      seen.add(id);
+      seen.add(f);
     }
   }
   return errors;
+}
+function parentsFirst(pages) {
+  const byFile = new Map(pages.map((p) => [p.file, p]));
+  const ordered = [];
+  const placed = /* @__PURE__ */ new Set();
+  const place = (p, path) => {
+    if (placed.has(p.file) || path.has(p.file)) return;
+    path.add(p.file);
+    const parent = p.parentFile ? byFile.get(p.parentFile) : void 0;
+    if (parent) place(parent, path);
+    placed.add(p.file);
+    ordered.push(p);
+  };
+  for (const p of pages) place(p, /* @__PURE__ */ new Set());
+  return ordered;
 }
 
 // src/confluence.ts
@@ -30370,6 +30412,21 @@ function createConfluenceClient({ baseUrl, email, token }) {
     async movePage(id, parentId) {
       await call("PUT", `/rest/api/content/${id}/move/append/${parentId}`);
     },
+    async findPagesByTitle(spaceId, title) {
+      const r = await call(
+        "GET",
+        `/api/v2/pages?space-id=${encodeURIComponent(spaceId)}&title=${encodeURIComponent(title)}&status=current&limit=5`
+      );
+      return r.results.map((p) => ({ id: p.id, title: p.title, version: p.version.number, spaceId: p.spaceId, parentId: p.parentId ?? void 0 }));
+    },
+    async createPage({ spaceId, parentId, title, storage }) {
+      const p = await call(
+        "POST",
+        "/api/v2/pages",
+        { spaceId, status: "current", title, parentId, body: { representation: "storage", value: storage } }
+      );
+      return { id: p.id, title: p.title, version: p.version.number, spaceId: p.spaceId, parentId: p.parentId ?? void 0 };
+    },
     async updatePage(id, { title, storage, version, message }) {
       await call("PUT", `/api/v2/pages/${id}`, {
         id,
@@ -30408,6 +30465,73 @@ ${body}`;
   }
   return api("POST", `/issues/${pr}/comments`, { body: full });
 }
+function pinPageIds(raw, pins, normalize2) {
+  const parsed = JSON.parse(raw);
+  let text2 = raw;
+  for (const pin of pins) {
+    const entry = parsed.pages.find((p) => !p.pageId && normalize2(p.file) === pin.file);
+    if (!entry) continue;
+    const pattern = new RegExp(`("file"\\s*:\\s*)${escapeRegExp(JSON.stringify(entry.file))}`);
+    if (!pattern.test(text2)) throw new Error(`Could not find the entry for ${pin.file} in the mapping file`);
+    text2 = text2.replace(pattern, (m) => `${m}, "pageId": ${JSON.stringify(pin.pageId)}`);
+  }
+  const check = JSON.parse(text2);
+  for (const pin of pins) {
+    if (!check.pages.some((p) => normalize2(p.file) === pin.file && p.pageId === pin.pageId)) {
+      throw new Error(`Pinning ${pin.file} produced an unexpected mapping`);
+    }
+  }
+  return text2;
+}
+var escapeRegExp = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+function pinPrBody(pins, configPath) {
+  return [
+    `confluence-sync found or created these pages, which had no \`pageId\` in \`${configPath}\`. This PR records their ids, so later runs use them directly and a renamed page is never created again.`,
+    "",
+    "| File | Page id | Title | How |",
+    "|---|---|---|---|",
+    ...pins.map((p) => `| \`${p.file}\` | ${p.pageId} | ${p.title ?? ""} | ${p.status === "created" ? "created" : "found by title"} |`)
+  ].join("\n");
+}
+async function openPinPr({
+  repo,
+  token,
+  base,
+  path,
+  content,
+  body,
+  branch = "confluence-sync/pin-page-ids"
+}) {
+  const api = async (method, apiPath, payload, okStatuses = []) => {
+    const res = await fetch(`https://api.github.com/repos/${repo}${apiPath}`, {
+      method,
+      headers: { Authorization: `Bearer ${token}`, Accept: "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28" },
+      body: payload === void 0 ? void 0 : JSON.stringify(payload)
+    });
+    if (!res.ok && !okStatuses.includes(res.status)) throw new Error(`GitHub ${method} ${apiPath} \u2192 ${res.status}: ${(await res.text()).slice(0, 300)}`);
+    return { status: res.status, json: res.status === 204 ? void 0 : await res.json() };
+  };
+  const baseRef = await api("GET", `/git/ref/heads/${encodeURIComponent(base)}`);
+  const created = await api("POST", "/git/refs", { ref: `refs/heads/${branch}`, sha: baseRef.json.object.sha }, [422]);
+  if (created.status === 422) {
+    await api("PATCH", `/git/refs/heads/${branch}`, { sha: baseRef.json.object.sha, force: true });
+  }
+  const file = await api("GET", `/contents/${path}?ref=${encodeURIComponent(branch)}`);
+  await api("PUT", `/contents/${path}`, {
+    message: "Pin Confluence page ids created or found by confluence-sync",
+    content: Buffer.from(content).toString("base64"),
+    branch,
+    sha: file.json.sha
+  });
+  const owner = repo.split("/")[0];
+  const open2 = await api("GET", `/pulls?state=open&head=${encodeURIComponent(`${owner}:${branch}`)}`);
+  if (open2.json.length) {
+    await api("PATCH", `/pulls/${open2.json[0].number}`, { body });
+    return open2.json[0].html_url;
+  }
+  const pr = await api("POST", "/pulls", { title: "Pin Confluence page ids", head: branch, base, body });
+  return pr.json.html_url;
+}
 
 // src/mermaid.ts
 import { execFile } from "node:child_process";
@@ -30420,7 +30544,7 @@ var MERMAID_CLI = "@mermaid-js/mermaid-cli@11";
 function createMermaidRenderer() {
   const cache = /* @__PURE__ */ new Map();
   let dir;
-  async function render(source) {
+  async function render2(source) {
     dir ??= mkdtempSync(join(tmpdir(), "confluence-sync-mermaid-"));
     const id = String(cache.size);
     const input = join(dir, `${id}.mmd`);
@@ -30442,7 +30566,7 @@ ${detail}`);
     return readFileSync2(output);
   }
   return (source) => {
-    if (!cache.has(source)) cache.set(source, render(source));
+    if (!cache.has(source)) cache.set(source, render2(source));
     return cache.get(source);
   };
 }
@@ -36002,26 +36126,75 @@ function banner(ctx) {
 }
 
 // src/sync.ts
+var CREATED_PLACEHOLDER = "<p>Created by confluence-sync. Its content is published in the same run.</p>";
+var pageUrl = (baseUrl, id) => `${baseUrl}/pages/viewpage.action?pageId=${id}`;
 async function syncAll(opts) {
   const { config: config2, client, mode } = opts;
   const log = opts.log ?? (() => {
   });
-  const pageIdByFile = new Map(config2.pages.map((p) => [p.file, p.pageId]));
-  const results = [];
+  const idByFile = new Map(config2.pages.filter((p) => p.pageId).map((p) => [p.file, p.pageId]));
+  const results = new Map(
+    config2.pages.map((p) => [p.file, { file: p.file, pageId: p.pageId ?? "", url: p.pageId ? pageUrl(config2.baseUrl, p.pageId) : "", status: "error" }])
+  );
+  const pending = /* @__PURE__ */ new Map();
+  const created = /* @__PURE__ */ new Set();
+  if (client) {
+    const spaceByFile = /* @__PURE__ */ new Map();
+    for (const page of parentsFirst(config2.pages).filter((p) => !p.pageId)) {
+      const result = results.get(page.file);
+      result.title = page.title;
+      try {
+        const parentId = page.parentId ?? (page.parentFile ? idByFile.get(page.parentFile) : void 0);
+        let spaceId;
+        if (parentId) {
+          const parent = await client.getPage(parentId);
+          spaceId = parent.spaceId;
+          result.createdUnder = parent.title;
+        } else {
+          if (mode === "publish") throw new Error(`${page.file}: its parent ${page.parent} could not be found or created`);
+          spaceId = page.parentFile ? spaceByFile.get(page.parentFile) : void 0;
+          result.createdUnder = config2.pages.find((p) => p.file === page.parentFile)?.title;
+          if (!spaceId) throw new Error(`${page.file}: its parent ${page.parent} could not be resolved`);
+        }
+        spaceByFile.set(page.file, spaceId);
+        const found = await client.findPagesByTitle(spaceId, page.title);
+        if (found.length > 1) {
+          throw new Error(`${page.file}: ${found.length} pages are titled "${page.title}" in the parent's space; set its pageId in the mapping`);
+        }
+        if (found.length === 1) {
+          idByFile.set(page.file, found[0].id);
+          result.pageId = found[0].id;
+          result.url = pageUrl(config2.baseUrl, found[0].id);
+          result.foundByTitle = true;
+          result.createdUnder = void 0;
+          continue;
+        }
+        const problems = render(opts, page, idByFile, page.title).problems;
+        if (problems.length) throw new Error(problems.join("\n"));
+        pending.set(page.file, { spaceId, parentId });
+        if (mode === "check" || !parentId) continue;
+        const page_ = await client.createPage({ spaceId, parentId, title: page.title, storage: CREATED_PLACEHOLDER });
+        idByFile.set(page.file, page_.id);
+        created.add(page.file);
+        result.pageId = page_.id;
+        result.url = pageUrl(config2.baseUrl, page_.id);
+        log(`${page.file}: created page ${page_.id} under "${result.createdUnder}"`);
+      } catch (e) {
+        result.error = e.message;
+        log(`${page.file}: ${result.error}`);
+      }
+    }
+  }
   for (const page of config2.pages) {
-    const result = {
-      file: page.file,
-      pageId: page.pageId,
-      url: `${config2.baseUrl}/pages/viewpage.action?pageId=${page.pageId}`,
-      status: "error"
-    };
-    results.push(result);
+    const result = results.get(page.file);
+    if (result.error) continue;
+    const pageId = idByFile.get(page.file);
     try {
-      let live = client ? await client.getPage(page.pageId) : void 0;
+      let live = client && pageId ? await client.getPage(pageId) : void 0;
       const title = page.title ?? live?.title;
       result.title = title;
-      const ctx = { file: page.file, repoRoot: opts.repoRoot, pageIdByFile, baseUrl: config2.baseUrl, repoUrl: opts.repoUrl, sha: opts.sha, title, mermaid: opts.mermaid };
-      const rendered = renderPage(readFileSync4(resolve3(opts.repoRoot, page.file), "utf8"), ctx);
+      const ctx = { file: page.file, repoRoot: opts.repoRoot, pageIdByFile: idByFile, baseUrl: config2.baseUrl, repoUrl: opts.repoUrl, sha: opts.sha, title, mermaid: opts.mermaid };
+      const rendered = render(opts, page, idByFile, title);
       const problems = [...rendered.problems];
       const files = /* @__PURE__ */ new Map();
       for (const asset of rendered.assets) {
@@ -36036,26 +36209,33 @@ async function syncAll(opts) {
       if (xml !== true) problems.push(`${page.file}: generated XHTML is invalid: ${xml.err.msg} (line ${xml.err.line})`);
       if (problems.length) throw new Error(problems.join("\n"));
       const hash = createHash2("sha256").update(JSON.stringify({ title, storage: rendered.storage, assets: [...files.keys()].sort() })).digest("hex");
-      if (!client || !live) {
+      if (!client) {
         result.status = "checked";
         result.storage = rendered.storage;
         continue;
       }
+      if (!live) {
+        result.status = "will-create";
+        result.storage = (opts.banner ? banner(ctx) : "") + rendered.storage;
+        result.uploads = [...files.keys()];
+        continue;
+      }
       let moveTo;
-      if (page.parentId && live.parentId !== page.parentId) {
-        const parent = await client.getPage(page.parentId);
-        if (parent.spaceId !== live.spaceId) throw new Error(`${page.file}: parent page ${page.parentId} ("${parent.title}") is in another space`);
+      const parentId = page.parentId ?? (page.parentFile ? idByFile.get(page.parentFile) : void 0);
+      if (parentId && live.parentId !== parentId) {
+        const parent = await client.getPage(parentId);
+        if (parent.spaceId !== live.spaceId) throw new Error(`${page.file}: parent page ${parentId} ("${parent.title}") is in another space`);
         moveTo = parent.id;
         result.movedUnder = parent.title;
       }
-      const previous = await client.getSyncProperty(page.pageId);
+      const previous = await client.getSyncProperty(live.id);
       const contentChanged = previous?.hash !== hash;
       if (!contentChanged && !moveTo) {
         result.status = "unchanged";
         continue;
       }
       const storage = (opts.banner ? banner(ctx) : "") + rendered.storage;
-      const existing = files.size ? await client.attachmentNames(page.pageId) : /* @__PURE__ */ new Set();
+      const existing = files.size ? await client.attachmentNames(live.id) : /* @__PURE__ */ new Set();
       result.uploads = [...files.keys()].filter((name) => !existing.has(name));
       if (mode === "check") {
         result.status = "will-update";
@@ -36064,9 +36244,9 @@ async function syncAll(opts) {
         continue;
       }
       if (moveTo) {
-        await client.movePage(page.pageId, moveTo);
+        await client.movePage(live.id, moveTo);
         log(`${page.file}: moved under "${result.movedUnder}"`);
-        live = await client.getPage(page.pageId);
+        live = await client.getPage(live.id);
       }
       if (!contentChanged) {
         result.status = "updated";
@@ -36075,27 +36255,42 @@ async function syncAll(opts) {
       }
       for (const name of result.uploads) {
         const f = files.get(name);
-        await client.uploadAttachment(page.pageId, name, f.data, f.contentType);
+        await client.uploadAttachment(live.id, name, f.data, f.contentType);
         log(`${page.file}: uploaded ${name}`);
       }
-      await client.updatePage(page.pageId, {
+      await client.updatePage(live.id, {
         title: title ?? live.title,
         storage,
         version: live.version + 1,
         message: `Synced from ${opts.repo}@${opts.sha.slice(0, 7)}`
       });
-      await client.setSyncProperty(page.pageId, { hash, sha: opts.sha, file: page.file, repo: opts.repo });
-      result.status = "updated";
-      log(`${page.file}: updated page ${page.pageId} to version ${live.version + 1}`);
+      await client.setSyncProperty(live.id, { hash, sha: opts.sha, file: page.file, repo: opts.repo });
+      result.status = created.has(page.file) ? "created" : "updated";
+      log(`${page.file}: updated page ${live.id} to version ${live.version + 1}`);
     } catch (e) {
       result.status = "error";
       result.error = e.message;
       log(`${page.file}: ${result.error}`);
     }
   }
-  return results;
+  return config2.pages.map((p) => results.get(p.file));
+}
+function render(opts, page, idByFile, title) {
+  const ctx = {
+    file: page.file,
+    repoRoot: opts.repoRoot,
+    pageIdByFile: idByFile,
+    baseUrl: opts.config.baseUrl,
+    repoUrl: opts.repoUrl,
+    sha: opts.sha,
+    title,
+    mermaid: opts.mermaid
+  };
+  return renderPage(readFileSync4(resolve3(opts.repoRoot, page.file), "utf8"), ctx);
 }
 var ICONS = {
+  created: "\u{1F195} created",
+  "will-create": "\u{1F195} will create on merge",
   updated: "\u2705 updated",
   unchanged: "\u26AA unchanged",
   "will-update": "\u{1F504} will update on merge",
@@ -36105,11 +36300,15 @@ var ICONS = {
 function resultsTable(results) {
   const rows = results.map((r) => {
     const notes = [
+      ...r.foundByTitle ? ["existing page found by title"] : [],
+      ...r.createdUnder ? [`${r.status === "will-create" ? "will create" : "created"} under "${r.createdUnder}"`] : [],
       ...r.movedUnder ? [`${r.status === "will-update" ? "will move" : "moved"} under "${r.movedUnder}"`] : [],
       ...r.uploads?.length ? [`attachments: ${r.uploads.join(", ")}`] : []
     ];
     const detail = r.error ? r.error.replaceAll("\n", "<br>").replaceAll("|", "\\|") : notes.join("; ");
-    return `| \`${r.file}\` | [${r.title ?? r.pageId}](${r.url}) | ${ICONS[r.status]} | ${detail} |`;
+    const name = r.title ?? (r.pageId || r.file);
+    const page = r.status === "will-create" || !r.url ? name : `[${name}](${r.url})`;
+    return `| \`${r.file}\` | ${page} | ${ICONS[r.status]} | ${detail} |`;
   });
   return ["| File | Confluence page | Status | Details |", "|---|---|---|---|", ...rows].join("\n");
 }
@@ -36128,7 +36327,8 @@ async function main() {
   const mermaid = getInput("mermaid") === "code" ? "code" : "local";
   if (!token && !dryRun) throw new Error("The token input is required to publish (it may only be empty in dry-run or pull request checks).");
   if (!token) warning("No Confluence token (e.g. a pull request from a fork): running offline checks only.");
-  const { config: config2, errors } = loadConfig(getInput("config") || "docs/confluence.json", repoRoot, getInput("base-url"));
+  const configPath = getInput("config") || "docs/confluence.json";
+  const { config: config2, errors } = loadConfig(configPath, repoRoot, getInput("base-url"));
   let results = [];
   if (config2) {
     results = await syncAll({
@@ -36145,6 +36345,26 @@ async function main() {
       log: (m) => info(m)
     });
   }
+  const pins = config2 ? results.filter((r) => r.pageId && !config2.pages.find((p) => p.file === r.file)?.pageId && r.status !== "error") : [];
+  let pinNote;
+  if (!dryRun && pins.length && getBooleanInput("pin-created-ids")) {
+    try {
+      const raw = readFileSync5(resolve4(repoRoot, configPath), "utf8");
+      const workspace = process.env.GITHUB_WORKSPACE ?? process.cwd();
+      const url = await openPinPr({
+        repo,
+        token: getInput("github-token"),
+        base: process.env.GITHUB_REF_NAME ?? "main",
+        path: normalizePath(relative(workspace, resolve4(repoRoot, configPath))),
+        content: pinPageIds(raw, pins, normalizePath),
+        body: pinPrBody(pins, configPath)
+      });
+      pinNote = `Page ids recorded in ${url}`;
+      info(pinNote);
+    } catch (e) {
+      warning(`Could not open the pull request pinning the page ids: ${e.message}`);
+    }
+  }
   const failed = errors.length || results.some((r) => r.status === "error");
   const heading2 = isPr ? `### \u{1F4C4} Confluence preview: ${failed ? "\u274C fix the errors below before merging" : "pages are valid; they will be published on merge"}` : `### \u{1F4C4} Confluence sync${dryRun ? " (dry run, nothing written)" : ""}`;
   const report = [
@@ -36152,7 +36372,8 @@ async function main() {
     ...errors.length ? [`**Mapping errors:**
 ${errors.map((e) => `- ${e}`).join("\n")}`] : [],
     ...results.length ? [resultsTable(results)] : [],
-    ...token ? [] : ["_Offline check only: no Confluence token was available._"]
+    ...token ? [] : ["_Offline check only: no Confluence token was available._"],
+    ...pinNote ? [pinNote] : []
   ].join("\n\n");
   for (const r of results.filter((r2) => r2.storage)) {
     startGroup(`${r.file} \u2192 Confluence storage format`);

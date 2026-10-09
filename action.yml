@@ -1,5 +1,5 @@
 name: Confluence Sync
-description: Publish repository Markdown files to existing Confluence pages. Checks and previews on pull requests; publishes on push.
+description: Publish repository Markdown files to Confluence pages, creating missing ones. Checks and previews on pull requests; publishes on push.
 author: iglesial
 branding:
   icon: upload-cloud
@@ -43,13 +43,17 @@ inputs:
     required: false
     default: 'true'
   github-token:
-    description: Token used for the PR comment (needs pull-requests write).
+    description: Token used for the PR comment (needs pull-requests write) and, with pin-created-ids, the pin PR (contents and pull-requests write).
     required: false
     default: ${{ github.token }}
+  pin-created-ids:
+    description: After publishing, open one pull request that writes the ids of pages found or created (entries without pageId) into the mapping. Needs contents and pull-requests write.
+    required: false
+    default: 'false'
 
 outputs:
   results:
-    description: JSON array of { file, pageId, url, status, title, error, uploads } per mapped page.
+    description: JSON array of { file, pageId, url, status, title, error, uploads, createdUnder, foundByTitle, movedUnder } per mapped page.
 
 runs:
   using: node24
